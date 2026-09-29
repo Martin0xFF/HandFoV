@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebXR Hand Tracking FOV & Angle Visualizer</title>
+    <style>
+        :root {
+            --bg-color: #0d1117;
+            --surface-color: #161b22;
+            --border-color: #30363d;
+            --primary-color: #58a6ff;
+            --text-color: #c9d1d9;
+            --text-muted: #8b949e;
+            --accent-green: #3fb950;
+            --accent-purple: #bc8cff;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+            user-select: none;
+        }
+
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        #ui-overlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+            max-width: 420px;
+            background: rgba(22, 27, 34, 0.88);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+            pointer-events: auto;
+        }
+
+        h1 {
+            font-size: 1.15rem;
+            font-weight: 600;
+            color: #ffffff;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        p.desc {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            line-height: 1.4;
+            margin-bottom: 14px;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 8px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            margin-bottom: 14px;
+        }
+
+        .status-badge.supported {
+            background: rgba(63, 185, 80, 0.15);
+            color: var(--accent-green);
+            border: 1px solid rgba(63, 185, 80, 0.4);
+        }
+
+        .status-badge.unsupported {
+            background: rgba(248, 81, 73, 0.15);
+            color: #f85149;
+            border: 1px solid rgba(248, 81, 73, 0.4);
+        }
+
+        .metrics-card {
+            background: rgba(13, 17, 23, 0.6);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 14px;
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+            font-size: 0.82rem;
+        }
+
+        .metric-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 6px;
+        }
+
+        .metric-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .metric-label {
+            color: var(--text-muted);
+        }
+
+        .metric-val {
+            font-weight: 600;
+            color: #ffffff;
+        }
+
+        .metric-val.highlight {
+            color: var(--primary-color);
+        }
+
+        .action-btn {
+            display: block;
+            width: 100%;
+            background: #238636;
+            color: #ffffff;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 16px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s ease, transform 0.05s ease;
+        }
+
+        .action-btn:hover:not(:disabled) {
+            background: #2ea043;
+        }
+
+        .action-btn:active:not(:disabled) {
+            transform: scale(0.98);
+        }
+
+        .action-btn:disabled {
+            background: #21262d;
+            color: #484f58;
+            cursor: not-allowed;
+        }
+
+        .sim-note {
+            margin-top: 10px;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-align: center;
+        }
+
+        #vr-button-slot {
+            margin-top: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container"></div>
+
+    <div id="ui-overlay">
+        <h1>📐 Hand FOV Angle Visualizer</h1>
+        <p class="desc">
+            Measures the vertical subtended angle from the user's head gaze/view direction down to the hand palm. A virtual mirror reflects the user's hands and HUD readout.
+        </p>
+
+        <div id="xr-support-badge" class="status-badge supported">Checking WebXR...</div>
+
+        <div class="metrics-card">
+            <div class="metric-row">
+                <span class="metric-label">Head Gaze (Pitch):</span>
+                <span id="metric-head-pitch" class="metric-val">0.0°</span>
+            </div>
+            <div class="metric-row">
+                <span class="metric-label">Left Hand Angle:</span>
+                <span id="metric-left-angle" class="metric-val highlight">--</span>
+            </div>
+            <div class="metric-row">
+                <span class="metric-label">Right Hand Angle:</span>
+                <span id="metric-right-angle" class="metric-val highlight">--</span>
+            </div>
+            <div class="metric-row">
+                <span class="metric-label">Tracking Status:</span>
+                <span id="metric-tracking-status" class="metric-val">No Hands Active</span>
+            </div>
+        </div>
+
+        <button id="enter-xr-btn" class="action-btn" disabled>Enter Immersive VR / AR</button>
+        <div class="sim-note">Desktop: Drag to look around, Space + mouse drag to move simulated hand.</div>
+    </div>
+
+    <!-- Importmap for Three.js -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.161.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.161.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module" src="app.js"></script>
+</body>
+</html>
